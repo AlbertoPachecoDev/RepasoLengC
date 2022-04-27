@@ -67,7 +67,7 @@ using u8 = uint8_t;  // alias for Arduino param type
 /// CONSTANTES
 
 // Valor crítico activación de refrigeración
-const float UMBRAL_TEMP = 29.5; 
+const float UMBRAL_TEMP = 29.0; 
 
 //// INPUTS
 const u8   DHTPIN = 13; // DHT sensor input pin
@@ -156,6 +156,24 @@ float old_temp = 0.0; // for temp changes
 
 //// Application 3-stages
 
+// Read and show temperature if changed 
+void read_temp() {
+ if (old_temp != temp.read()) {
+    old_temp = temp.val;         // update value
+    cout << "Temp = "            // display current temperature
+         << temp << endl;
+  }
+}
+
+// Read all button inputs and test for changes
+bool test_for_changes() {
+  const bool ch1 = (a != temp.verif());
+  const bool ch2 = (b != btn1.read());
+  const bool ch3 = (c != btn2.read());
+  const bool ch4 = (d != btn3.read());
+  return (ch1 || ch2 || ch3 || ch4);
+}
+
 // Stage-1: get input & set control variables
 void read_input(bool start=false) { 
   if (start) {
@@ -191,33 +209,21 @@ void report() {
 /// INITIALIZATION
 void setup() {
   led1 = led2 = false; // turn-off leds
+  delay(2500);
   cout << "** Sistema de Refrigeración **" << endl; // screen title
+  cout << "Umbral de temperatura: " << UMBRAL_TEMP << "C" << endl;
   read_input(true); // read initial values
   report(); // initial report
 } // end-setup
 
 /// CONTROL-LOOP
 void loop() {
-  // Read and show temperature if changed  
-  if (old_temp != temp.read()) {
-    old_temp = temp.val;         // update value
-    cout << "Temp = "            // display current temperature
-         << temp << endl;
-  }
-  // Read all button inputs and test for changes
-  const bool ch1 = (a != temp.verif());
-  const bool ch2 = (b != btn1.read());
-  const bool ch3 = (c != btn2.read());
-  const bool ch4 = (d != btn3.read());
-  const bool any_change = ch1 || ch2 || ch3 || ch4;
-  // Test if inputs have any changes
-  //   if change is true, take action
-  //   if not, apply some delay only 
-  if (any_change) { // Any changes? Execute 3-stages 
+  read_temp(); // Read and show temperature if changed
+  auto any_change = test_for_changes(); // Read button-inputs & test for changes
+  if (any_change) { // // Test if inputs have any changes to execute all-3-stages 
     read_input(); // stage-1: read & update control variables
     control();    // stage-2: take control action
     report();     // stage-3: show status
-  } else {        // some delay if no changes...
-    delay(500);
   }
+  delay(500);
 } // end-loop
