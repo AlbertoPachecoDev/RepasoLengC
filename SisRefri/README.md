@@ -11,6 +11,8 @@ Elaboró: Alberto Pacheco (apacheco@uach.mx)
 
 Fecha: 20/Abril/2021
 
+### To-Do: Portar código a RPi
+
 ----
 
 ### CONTEXTO (HIPOTÉTICO):
