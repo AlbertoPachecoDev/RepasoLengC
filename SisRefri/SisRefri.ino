@@ -35,12 +35,13 @@
     - Estandarizar API de lectura (read) que lee, convierte, valida y temporiza los valores de lectura de puertos
     - Redefinir operador-consola (insertor << de cout) y operador-asignación (operator=) para simplificar código
     - Definir proceso de la aplicación en 3 etapas (stages): leer entradas, procesar datos y reportar resultados
+    - Zero-cost abstraction technique: inline functions
   - Simplificar puertos de entrada usando un banco de interruptores (DIP switch IC) 
     http://ardupiclab.blogspot.com/2020/04/a-dip-switch-for-arduino.html
   - Simplificar puertos de salida usando un IC driver ULN2003 para los LEDs 
     https://randomnerdtutorials.com/esp32-stepper-motor-28byj-48-uln2003/
 
-  CONEXIONES:
+  CONEXIONES ESP32:
   - ESP32 -> INPUT DHT11 SENSOR https://www.makerguides.com/wp-content/uploads/2019/08/DHT11-3-pin-with-Arduino-UNO-wiring-diagram-schematic-768x369.jpg
     - VCC/VIN -> VCC
     - GND-PIN -> GND
@@ -54,11 +55,30 @@
     - LED-2: GPIO-14 -> DRIVER-IN2
     - VCC/VIN -> DRIVER-VCC
     - GND-PIN -> DRIVER-GND    
+
+  CONEXIONES RASPBERRY NANO CP2040:
+  - ESP32 -> INPUT DHT11 SENSOR
+    - VCC/VIN -> VCC
+    - GND-PIN -> GND
+    - GPIO-13 -> SIGNAL
+  - ESP32 INPUT BUTTONS
+    - BTN-1: GPIO-25  (MANUAL)
+    - BTN-2: GPIO-26  (ALTA-DEMANDA)
+    - BTN-3: GPIO-27  (SOBRE-CARGA)
+  - ESP32 -> ULN2003 DRIVER OUTPUT LEDS
+    - LED-1: GPIO-12 -> DRIVER-IN1
+    - LED-2: GPIO-14 -> DRIVER-IN2
+    - VCC/VIN -> DRIVER-VCC
+    - GND-PIN -> DRIVER-GND    
+
 */
 
 #include <iostream>
 #include <cassert>
 #include "DHT.h"
+
+#define _SIMU_
+
 
 /// Pseudo Types (alias)
 using namespace std; // using cout only
@@ -79,25 +99,24 @@ const u8 B3_SOBRE = 27; // Button-3 input pin
 const u8 LED_MANUAL = 12; // LED: Refri Manual output
 const u8 LED_AUTO   = 14; // LED: Refri Auto output
 
-
 ////--> API
 
 //// Macro to convert boolean to string
-inline string b2s(bool val) { return (val? "on" : "off"); }
+inline string b2s(bool val) { return (val? "on " : "off"); }
 
 //// Temp sensor API
 struct Temp {
   const u8 pin;
   float val;
   DHT dht;
-  Temp(u8 p): pin(p), dht(p,DHT11) { dht.begin(); } 
-  float read() {
-    val = dht.readTemperature();
-    assert(!isnan(val)); // Failed to read from DHT sensor!
+inline Temp(u8 p): pin(p), dht(p,DHT11) { dht.begin(); } 
+inline float read() {
+    this->val = dht.readTemperature();
+    assert(!isnan(this->val)); // Failed to read from DHT sensor!
     delay(150);
-    return val;
+    return this->val;
   }
-  bool verif() { return val > UMBRAL_TEMP; }
+inline bool verif() { return val > UMBRAL_TEMP; }
   friend ostream& operator <<(ostream &os, const Temp &t) {
     os << t.val << "C";
     return os; 
@@ -108,14 +127,14 @@ struct Temp {
 struct Led {
   const u8 pin;
   bool val;
-  Led(u8 p): pin(p) { pinMode(p, OUTPUT); }
-  bool operator=(bool state) {
-    val = state;
-    digitalWrite(pin, val);
+inline Led(u8 p): pin(p) { pinMode(p, OUTPUT); }
+inline bool operator=(bool state) {
+    this->val = state;
+    digitalWrite(this->pin, this->val);
     delay(30);
-    return val;
+    return this->val;
   }
-  friend ostream& operator <<(ostream &os, const Led &d) {
+inline friend ostream& operator <<(ostream &os, const Led &d) {
     os << b2s(d.val);
     return os; 
   }
@@ -125,13 +144,13 @@ struct Led {
 struct Btn {
   const u8 pin;
   bool val = false;
-  Btn(u8 p): pin(p) { pinMode(p, INPUT_PULLUP); }
-  bool read() {
-    val = digitalRead(pin)==LOW;  // inverse-logic
+inline Btn(u8 p): pin(p) { pinMode(p, INPUT_PULLUP); }
+inline bool read() {
+    this->val = digitalRead(this->pin)==LOW;  // inverse-logic
     delay(100);
-    return val;
+    return this->val;
   }
-  friend ostream& operator <<(ostream &os, const Btn &b) {
+inline friend ostream& operator <<(ostream &os, const Btn &b) {
     os << b2s(b.val);
     return os; 
   }
@@ -143,30 +162,32 @@ struct Btn {
 //// APPLICATION
 
 /// Device Objects
-Led  led1(LED_MANUAL); // Create manual-ref led-1 
-Led  led2(LED_AUTO);   // Create auto-ref led-2 
+#ifndef _SIMU_
 Btn  btn1(B1_MAN);     // Create manual button-1
 Btn  btn2(B2_ALTA);    // Create alta-demanda button-2
 Btn  btn3(B3_SOBRE);   // Create sobrecarga button-3
 Temp temp(DHTPIN);     // Create temperature sensor
+float old_temp = 0.0; // for temp changes
+#endif
+Led  led1(LED_MANUAL); // Create manual-ref led-1 
+Led  led2(LED_AUTO);   // Create auto-ref led-2 
 
 //// Global variables
 bool a, b, c, d; // control variables
-float old_temp = 0.0; // for temp changes
 
 //// Application 3-stages
 
+#ifndef _SIMU_
 // Read and show temperature if changed 
-void read_temp() {
+inline void read_temp() {
  if (old_temp != temp.read()) {
-    old_temp = temp.val;         // update value
-    cout << "Temp = "            // display current temperature
-         << temp << endl;
+    old_temp = temp.val; // update temp buffer value
+    cout << "Temp = " << temp << endl; // display current temperature
   }
 }
 
 // Read all button inputs and test for changes
-bool test_for_changes() {
+inline bool test_for_changes() {
   const bool ch1 = (a != temp.verif());
   const bool ch2 = (b != btn1.read());
   const bool ch3 = (c != btn2.read());
@@ -175,7 +196,7 @@ bool test_for_changes() {
 }
 
 // Stage-1: get input & set control variables
-void read_input(bool start=false) { 
+inline void read_input(bool start=false) { 
   if (start) {
     old_temp = temp.read(); // at start read temperature
   }
@@ -185,39 +206,68 @@ void read_input(bool start=false) {
   c = btn2.val;
   d = btn3.val;
 } // end-read-input
+#endif
 
 // Stage-2: control-actions using boolean expressions
-void control() { 
+inline void control() { 
     led1 = (a && d) || (a && c) || b; // Minimal Form: ad + ac + b
     led2 = a || c || d;               // Minimal Form: a + c + d
 } // end-control
 
 // Stage-3: report status
-void report() {
-    cout << endl
-         << "High Temperature? " << b2s(a) << endl
-         << "Btn-Manual = "      << btn1 << endl
-         << "Btn-Alta-Dem = "    << btn2 << endl
-         << "Btn-Sobrecarga = "  << btn3 << endl;
-    cout << ">> MANUAL REFR. = " << led1 << endl;
-    cout << ">> AUTOM. REFR. = " << led2 << endl << endl;
+inline void report() {
+#ifdef _SIMU_
+  cout  << " a=" << b2s(a)
+        << " b=" << b2s(b)
+        << " c=" << b2s(c)
+        << " d=" << b2s(d)
+        << " MN="  << led1
+        << " AT=" << led2 << endl;
+#else
+  cout  << endl
+        << "High Temp? "        << b2s(a) << endl
+        << "Btn-Manual = "      << btn1 << endl
+        << "Btn-Alta-Dem = "    << btn2 << endl
+        << "Btn-Sobrecarga = "  << btn3 << endl
+        << ">> MANUAL REFR. = " << led1 << endl
+        << ">> AUTOM. REFR. = " << led2 << endl
+        << endl;
+#endif
 } // end-report
-
 
 //// Arduino user-application (setup & loop)
 
 /// INITIALIZATION
 void setup() {
   led1 = led2 = false; // turn-off leds
-  delay(2500);
   cout << "** Sistema de Refrigeración **" << endl; // screen title
   cout << "Umbral de temperatura: " << UMBRAL_TEMP << "C" << endl;
+  delay(500);
+#ifdef _SIMU_
+  for (const auto &va : { false, true }) {
+    a = va;
+    for (const auto &vb : { false, true }) {
+      b = vb;
+      for (const auto &vc : { false, true }) {
+        c = vc;
+        for (const auto &vd : { false, true }) {
+          d = vd;
+          control();
+          report();
+          delay(250);
+        }
+      }
+    }
+  }
+#else
   read_input(true); // read initial values
   report(); // initial report
+#endif
 } // end-setup
 
 /// CONTROL-LOOP
 void loop() {
+#ifndef _SIMU_
   read_temp(); // Read and show temperature if changed
   auto any_change = test_for_changes(); // Read button-inputs & test for changes
   if (any_change) { // // Test if inputs have any changes to execute all-3-stages 
@@ -226,4 +276,5 @@ void loop() {
     report();     // stage-3: show status
   }
   delay(500);
+#endif
 } // end-loop
